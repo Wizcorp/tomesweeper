@@ -12,3 +12,8 @@ logs
 results
 
 npm-debug.log
+
+/node-modules
+/coverage
+.DS_Store
+._.DS_Store
