@@ -8,13 +8,13 @@ exports.testUndefinedHasProperty = function (test) {
 	var b = Tome.conjure(a);
 
 	var ts = new Tomesweeper();
-	ts.add(b);
+	ts.addTome(b);
 
 	b.a = 5;
 
 	var report = ts.report();
 
-	test.strictEqual(report.length, 1);
+	test.strictEqual(report[0].type, 'keyInjection');
 
 	test.done();
 };
@@ -26,13 +26,13 @@ exports.testTypeChange = function (test) {
 	var b = Tome.conjure(a);
 
 	var ts = new Tomesweeper();
-	ts.add(b);
+	ts.addTome(b);
 
 	b.a.assign('string');
 
 	var report = ts.report();
 
-	test.strictEqual(report.length, 1);
+	test.strictEqual(report[0].type, 'primitiveToPrimitive');
 
 	test.done();
 };

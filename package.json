@@ -11,7 +11,7 @@
     },
     "main": "tomesweeper.js",
     "dependencies": {
-        "tomes": ">=0.0.8"
+        "tomes": ">=0.0.9"
     },
     "devDependencies": {
         "nodeunit": "*"

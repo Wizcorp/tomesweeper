@@ -19,76 +19,107 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-var Tome = require('tomes').Tome;
-var UndefinedTome = require('tomes').UndefinedTome;
+var Tome = typeof require === 'function' ? require('tomes').Tome : Tome;
 
-/* sample usage:
-var sweeper = new Tomesweeper();
+var EventEmitter = typeof require === 'function' ? require('events').EventEmitter : EventEmitter;
 
-sweeper.prohibit('PropertyInjection', true);
-
-sweeper.on('log', function (entry) {
-	if (entry.type === 'TypeChange') {
-		throw new Error(entry.desc);
-	}
-});
-
-sweeper.add(tome);
-var result = sweeper.report();
-{ type: 'TypeChange', tome: tome, desc: 'Trying to convert from ArrayTome to NumberTome' }
-*/
+function inherits(Child, Parent) {
+	Child.prototype = Object.create(Parent.prototype, {
+		constructor: { value: Child, enumerable: false, writable: true, configurable: true }
+	});
+}
 
 var defaultProhibits = {
 	typeChange: {
 		primitiveToPrimitive: true,
 		primitiveToObject: true,
 		primitiveToArray: true,
-		primitiveToNull: true,
+		primitiveToNull: true
 	},
 	readable: {
-		invalidKeys: true
+		keyInjection: true,
+		keyMismatch: true,
+		undefinedTomeNotOnArrayTome: true,
+		valMismatch: true,
+		parentIsNotObjectOrArray: true
 	},
 	report: {
 	}
 };
 
-var checks = { typeChange: {} };
+var issues = { typeChange: {} };
 
-Tome.buildChain = function (tome) { //TODO remove after introduced in tomes v0.0.9
-	var chain = [];
+function foundIssue(tomesweeper, type, chain, desc) {
+	var issue = { type: type, chain: chain, desc: desc };
+	tomesweeper.foundIssues.push(issue);
+	tomesweeper.emit('issue', issue);
+}
 
-	while (tome.hasOwnProperty('__key__')) {
-		chain.push(tome.__key__);
-		tome = tome.__parent__;
-	}
-
-	return chain.reverse();
-};
-
-checks.undefinedHasProperty = function (tomesweeper, tome) {
+issues.keyInjection = function (tomesweeper, tome) {
 	var keys = Object.keys(tome);
 	for (var i = 0, len = keys.length; i < len; i += 1) {
 		var key = keys[i];
-		if (tome[key] instanceof Tome) {
-			if (tome instanceof UndefinedTome) {
-			}
+		if (!(tome[key] instanceof Tome)) {
+			foundIssue(tomesweeper, 'keyInjection', Tome.buildChain(tome), 'Found non-Tome key: ' + key);
 		}
 	}
 };
 
-checks.invalidKeys = function (tomesweeper, tome) { // need v0.0.9 to make this work.
+issues.keyMismatch = function (tomesweeper, tome) {
+	var key = tome.__key__;
+	var parent = tome.__parent__;
+	if (key === undefined && parent === undefined) {
+		return;
+	}
+
+	if (parent[key].__key__ !== key) {
+		foundIssue(tomesweeper, 'keyMismatch', Tome.buildChain(tome), 'Key does not match parent\'s key for this tome: ' + parent[key].__key__);
+	}
+};
+
+issues.undefinedTomeNotOnArrayTome = function (tomesweeper, tome) {
+	if (Tome.typeOf(tome) === 'undefined' && Tome.typeOf(tome.__parent__) === 'array') {
+		foundIssue(tomesweeper, 'undefinedTomeNotOnArrayTome', Tome.buildChain(tome), 'UndefinedTome\'s parent is not an ArrayTome.');
+	}
+};
+
+issues.valMismatch = function (tomesweeper, tome) {
+	var tomeType = Tome.typeOf(tome);
+	if (Tome.typeOf(tome.valueOf()) !== tomeType) {
+		foundIssue(tomesweeper, 'valMismatch', Tome.buildChain(tome), 'Tome\'s value does not match it\'s type: ' + tomeType);
+	}
+};
+
+issues.parentIsNotObjectOrArray = function (tomesweeper, tome) {
+	var parentType = Tome.typeOf(tome.__parent__);
+	if (parentType !== 'array' || parentType !== 'object') {
+		foundIssue(tomesweeper, 'parentIsNotObjectOrArray', Tome.buildChain(tome), 'Tome\'s parent is not an object or array.');
+	}
+};
+
+function reportSweep(tomesweeper, tome, chain) {
+	if (chain === undefined) {
+		chain = [];
+		tome = tome.__root__;
+	}
+	
+	for (var issueType in tomesweeper.prohibits.readable) {
+		issues[issueType](tomesweeper, tome);
+	}
+
+	for (issueType in tomesweeper.prohibits.report) {
+		issues[issueType](tomesweeper, tome);
+	}
+	
 	var keys = Object.keys(tome);
 	for (var i = 0, len = keys.length; i < len; i += 1) {
 		var key = keys[i];
 		if (tome[key] instanceof Tome) {
-			if (tome[key].__key__ !== key) {
-				tomesweeper.issues.push({ type: 'invalidKeys', chain: Tome.buildChain(tome), desc: 'Key "' + tome[key].__key__ + '" does not match key from parent: ' + key });
-			}
-		} else {
-			tomesweeper.issues.push({ type: 'invalidKeys', chain: Tome.buildChain(tome), desc: 'Found non-Tome key: ' + key });
+			var link = chain.concat(key);
+			reportSweep(tomesweeper, tome[key], link);
 		}
 	}
-};
+}
 
 var primitiveTypes = {
 	string: true,
@@ -96,50 +127,51 @@ var primitiveTypes = {
 	number: true
 };
 
-checks.typeChange.primitiveToNull = function (oldType, newType) {
+issues.typeChange.primitiveToNull = function (oldType, newType) {
 	return primitiveTypes[oldType] && newType === 'null';
 };
 
-checks.typeChange.primitiveToPrimitive = function (oldType, newType) {
+issues.typeChange.primitiveToPrimitive = function (oldType, newType) {
 	return primitiveTypes[oldType] && primitiveTypes[newType];
 };
 
-checks.typeChange.primitiveToArray = function (oldType, newType) {
+issues.typeChange.primitiveToArray = function (oldType, newType) {
 	return primitiveTypes[oldType] && newType === 'array';
 };
 
-checks.typeChange.primitiveToArray = function (oldType, newType) {
+issues.typeChange.primitiveToArray = function (oldType, newType) {
 	return primitiveTypes[oldType] && newType === 'object';
 };
 
 function Tomesweeper(prohibits) {
 	this.tomes = [];
-	this.issues = [];
+	this.foundIssues = [];
 	this.prohibits = prohibits || defaultProhibits;
+	this.handlers = {};
 
 	var that = this;
 
-	this.handlers = {};
-
 	this.handlers.typeChange = function (tome, oldType, newType) {
-		for (var checkName in that.prohibits.typeChange) {
-			if (checks.typeChange[checkName](oldType, newType)) {
+		for (var issueType in that.prohibits.typeChange) {
+			if (issues.typeChange[issueType](oldType, newType)) {
 				var chain = Tome.buildChain(tome);
-				return that.issues.push({ type: checkName, chain: chain, desc: 'Tome changed type from '.concat(oldType).concat(' to ').concat(newType) });
+				return foundIssue(that, issueType, chain, 'Tome changed type from '.concat(oldType).concat(' to ').concat(newType));
 			}
 		}
 	};
 
 	this.handlers.readable = function (dirtyAt, tome) {
-		for (var checkName in that.prohibits.readable) {
-			checks[checkName](that, tome);
+		for (var issueType in that.prohibits.readable) {
+			issues[issueType](that, tome);
 		}
 	};
 
 	return this;
 }
 
-Tomesweeper.prototype.add = function (tome) {
+inherits(Tomesweeper, EventEmitter);
+
+Tomesweeper.prototype.addTome = function (tome) {
 	for (var i = 0, len = this.tomes.length; i < len; i += 1) {
 		if (this.tomes[i].__root__ === tome.__root__) {
 			return this;
@@ -169,44 +201,44 @@ function unregisterHandlers(tomesweeper, eventName) {
 	}
 }
 
-Tomesweeper.prototype.prohibit = function (checkName, readable) {
-	if (checks.typeChange[checkName]) {
-		if (readable !== undefined) {
-			throw new Error(checkName + ' is a typeChange check and does not take any options.');
+Tomesweeper.prototype.sweepFor = function (issueType, reportOnly) {
+	if (issues.typeChange.hasOwnProperty(issueType)) {
+		if (reportOnly !== undefined) {
+			throw new Error('typeChanges can only be caught as they happen.');
 		}
 
 		if (!Object.keys(this.typeChange).length) {
 			registerHandlers(this, 'typeChange');
 		}
 
-		this.config.typeChange[checkName] = true;
-	} else if (checks[checkName]) {
-		if (readable) {
+		this.config.typeChange[issueType] = true;
+	} else if (issues.hasOwnProperty(issueType)) {
+		if (reportOnly) {
+			this.config.report[issueType] = true;
+
+			delete this.config.readable[issueType];
+		} else {
 			if (!Object.keys(this.readable).length) {
 				registerHandlers(this, 'readable');
 			}
 			
-			this.config.readable[checkName] = true;
+			this.config.readable[issueType] = true;
 
-			delete this.config.report[checkName];
-		} else {
-			this.config.report[checkName] = true;
-
-			delete this.config.readable[checkName];
+			delete this.config.report[issueType];
 		}
 
 		if (!Object.keys(this.config.readable).length) {
 			unregisterHandlers(this, 'readable');
 		}
 	} else {
-		throw new Error('Unknown check: ' + checkName);
+		throw new Error('Unknown issue: ' + issueType);
 	}
 };
 
-Tomesweeper.prototype.allow = function (checkName) {
+Tomesweeper.prototype.ignore = function (issueType) {
 	for (var eventName in this.prohibits) {
-		if (this.prohibits[eventName].hasOwnProperty(checkName)) {
-			delete this.prohibits[eventName][checkName];
+		if (this.prohibits[eventName].hasOwnProperty(issueType)) {
+			delete this.prohibits[eventName][issueType];
 			if (Object.keys(this.prohibits[eventName]).length && eventName !== 'report') {
 				unregisterHandlers(this, eventName);
 			}
@@ -214,7 +246,7 @@ Tomesweeper.prototype.allow = function (checkName) {
 	}
 };
 
-Tomesweeper.prototype.allowAll = function () {
+Tomesweeper.prototype.ignoreAll = function () {
 	for (var eventName in this.prohibits) {
 		this.prohibits[eventName] = {};
 		if (eventName !== 'report') {
@@ -223,7 +255,7 @@ Tomesweeper.prototype.allowAll = function () {
 	}
 };
 
-Tomesweeper.prototype.prohibitAll = function () {
+Tomesweeper.prototype.sweepForAll = function () {
 	for (var eventName in this.prohibits) {
 		if (!Object.keys(this.prohibits[eventName]).length && eventName !== 'report') {
 			registerHandlers(this, eventName);
@@ -239,15 +271,14 @@ Tomesweeper.prototype.report = function (tomes) {
 		tomes = [ tomes ];
 	}
 
-	for (var checkName in this.prohibits.report) {
-		for (var i = 0, len = tomes.length; i < len; i += 1) {
-			checks[checkName](this, tomes[i]);
-		}
+	for (var i = 0, len = tomes.length; i < len; i += 1) {
+		reportSweep(this, tomes[i]);
 	}
 
-	var out = this.issues;
+
+	var out = this.foundIssues;
 	
-	this.issues = [];
+	this.foundIssues = [];
 
 	return out;
 };
