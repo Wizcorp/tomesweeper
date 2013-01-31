@@ -1,0 +1,30 @@
+{
+    "name": "tomesweeper",
+    "description": "Catch mistakes you've made with tomes.",
+    "version": "0.0.1",
+    "author": "Wizcorp, Inc. <info@wizcorp.jp>",
+    "maintainers": [
+        { "name": "Bjorn Stromberg", "email": "bstromberg@wizcorp.jp" }
+    ],
+    "scripts": {
+        "test": "node test"
+    },
+    "main": "tomesweeper.js",
+    "dependencies": {
+        "tomes": ">=0.0.9"
+    },
+    "devDependencies": {
+        "nodeunit": "*"
+    },
+    "license": {
+        "type": "MIT",
+        "url": "https://github.com/Wizcorp/tomesweeper/raw/master/LICENSE"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Wizcorp/tomesweeper.git"
+    },
+    "bugs" : {
+        "url" : "http://github.com/Wizcorp/tomesweeper/issues"
+    }
+}

@@ -13,7 +13,7 @@ results
 
 npm-debug.log
 
-/node-modules
+/node_modules
 /coverage
 .DS_Store
 ._.DS_Store
