@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/bjornstar/tomesweeper.png)](https://travis-ci.org/bjornstar/tomesweeper)
+
 tomesweeper
 ===========
 
